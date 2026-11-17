@@ -1,6 +1,13 @@
 # Gesture CNN Game Control — Sujet 21
 
-Prototype Python pour le **contrôle gestuel en temps réel d'un personnage de jeu vidéo par CNN**.
+Projet Python pour le **contrôle gestuel en temps réel d'un personnage de jeu vidéo par CNN**.\
+
+Développement d'une application interactive capable de détecter les gestes d’un joueur à partir d’une caméra et de les convertir en commandes permettant de contrôler un personnage de jeu vidéo, notamment pour des actions telles que sauter, avancer, reculer ou se baisser.
+
+Les CNN permettront de reconnaître les gestes à partir des images capturées, tandis qu’un module de traitement en temps réel assurera la transmission des commandes au jeu.
+
+L’application proposera une interface permettant de visualiser les gestes reconnus, de tester les différentes commandes et d’évaluer la précision ainsi que le temps de réponse du système. 
+
 Le projet utilise une webcam, un CNN MobileNetV2 (Transfer Learning), une interface Tkinter et une transmission de commandes clavier.
 
 ## Stack
@@ -19,7 +26,7 @@ Le dataset doit contenir les classes suivantes (noms de dossiers exacts) :
 
 ## Installation (Windows / PowerShell)
 ```powershell
-py -3.11 -m venv .venv
+py -3.15 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
 ```
@@ -31,27 +38,6 @@ pip install -r requirements.txt
 Sélectionner l'interpréteur `.venv` dans VS Code.
 
 ## Dataset attendu
-```text
-dataset/
-  train/
-    idle/
-    jump/
-    forward/
-    backward/
-    crouch/
-  val/
-    idle/
-    jump/
-    forward/
-    backward/
-    crouch/
-  test/
-    idle/
-    jump/
-    forward/
-    backward/
-    crouch/
-```
 Les images doivent montrer la main/pose avec une définition de classe constante. Les splits doivent être distincts; éviter de placer des images quasi identiques dans train et test.
 
 ## Étapes
@@ -65,12 +51,20 @@ Le modèle entraîné est enregistré dans `models/best_model.pth`.
 ## Jeu vidéo
 Le contrôleur envoie les touches (par défaut):
 - `jump` → Space
-- `forward` → Right
-- `backward` → Left
-- `crouch` → Down
+- `right` → Right
+- `left` → Left
+- `roll` → Down
 - `idle` → relâcher les touches
 
 Tester d'abord dans un jeu qui accepte les commandes clavier. Le jeu/la fenêtre doit avoir le focus. Modifier le mapping dans `src/controller/game_controller.py` si nécessaire.
+
+## Metriques
+Mesure	Utilité
+Accuracy	Pourcentage global de prédictions correctes
+Precision	Fiabilité des prédictions pour chaque geste
+Recall	Capacité à reconnaître chaque geste
+F1-score	Équilibre entre precision et recall
+Confusion matrix	Identification des erreurs entre les gestes
 
 ## Mesures affichées
 - Geste prédit

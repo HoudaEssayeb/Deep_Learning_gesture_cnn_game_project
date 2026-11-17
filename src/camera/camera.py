@@ -28,12 +28,14 @@ class Camera:
             return False, None
 
         success, frame = self.cap.read()
-        
-        print("Min:", frame.min(), "Max:", frame.max())
-        print("Mean:", frame.mean())
 
         if not success or frame is None:
             return False, None
+
+        frame = cv2.flip(frame, 1)
+
+        print("Min:", frame.min(), "Max:", frame.max())
+        print("Mean:", frame.mean())
 
         return True, frame
 
