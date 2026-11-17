@@ -1,0 +1,6 @@
+Actual / Predicted,idle,jump,left,right,roll
+idle,2,0,0,0,0
+jump,0,1,0,1,0
+left,1,0,0,0,1
+right,1,0,1,0,0
+roll,0,0,0,1,1
