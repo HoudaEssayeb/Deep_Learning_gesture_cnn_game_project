@@ -5,8 +5,12 @@ import time
 
 class GestureStabilizer:
     """
-    Stabilizes gesture predictions using a sliding window,
-    a confidence threshold and an action cooldown.
+    Stabilizes gesture predictions and triggers actions.
+
+    - First action: immediately after stabilization.
+    - Same gesture: repeat every 5 seconds.
+    - Different gesture: trigger immediately.
+    - Idle: reset the repetition timer.
     """
 
     VALID_GESTURES = {
@@ -22,39 +26,37 @@ class GestureStabilizer:
         window_size=3,
         min_votes=2,
         confidence_threshold=0.40,
-        cooldown=0.3
+        repeat_interval=5.0
     ):
         if window_size <= 0:
             raise ValueError("window_size must be positive.")
 
         if not 1 <= min_votes <= window_size:
-            raise ValueError("min_votes must be between 1 and window_size.")
+            raise ValueError(
+                "min_votes must be between 1 and window_size."
+            )
 
         if not 0 <= confidence_threshold <= 1:
             raise ValueError(
                 "confidence_threshold must be between 0 and 1."
             )
 
-        if cooldown < 0:
-            raise ValueError("cooldown cannot be negative.")
+        if repeat_interval <= 0:
+            raise ValueError("repeat_interval must be positive.")
 
         self.window_size = window_size
         self.min_votes = min_votes
         self.confidence_threshold = confidence_threshold
-        self.cooldown = cooldown
+        self.repeat_interval = repeat_interval
 
-        # Stores the last predictions.
         self.predictions = deque(maxlen=window_size)
 
-        # Initial stable state.
         self.current_gesture = "idle"
-
-        # Time of the last triggered action.
-        self.last_action_time = float("-inf")
+        self.last_action_time = None
 
     def update(self, gesture, confidence):
         """
-        Add a new prediction and return the stabilized result.
+        Process a new prediction.
 
         Returns:
             dict: stable gesture, action event and confidence.
@@ -66,7 +68,7 @@ class GestureStabilizer:
         if not 0 <= confidence <= 1:
             raise ValueError("Confidence must be between 0 and 1.")
 
-        # Keep only predictions above the confidence threshold.
+        # Add prediction to the sliding window.
         if confidence >= self.confidence_threshold:
             self.predictions.append((gesture, confidence))
         else:
@@ -79,10 +81,6 @@ class GestureStabilizer:
             "is_stable": False
         }
 
-        # Wait until the prediction window is full.
-        if len(self.predictions) < self.window_size:
-            return result
-
         # Keep valid predictions.
         valid_predictions = [
             prediction
@@ -93,7 +91,7 @@ class GestureStabilizer:
         if not valid_predictions:
             return result
 
-        # Count gesture votes.
+        # Count votes.
         gesture_counts = Counter(
             prediction[0]
             for prediction in valid_predictions
@@ -101,38 +99,48 @@ class GestureStabilizer:
 
         candidate, votes = gesture_counts.most_common(1)[0]
 
-        # Require enough votes.
         if votes < self.min_votes:
             return result
 
-        # Calculate average confidence for the candidate.
+        # Calculate average confidence.
         candidate_confidence = sum(
             conf
             for predicted_gesture, conf in valid_predictions
             if predicted_gesture == candidate
         ) / votes
 
-        # Update stable gesture.
-        self.current_gesture = candidate
+        current_time = time.monotonic()
 
         result["stable_gesture"] = candidate
         result["stable_confidence"] = candidate_confidence
         result["is_stable"] = True
 
-        # Trigger the action whenever a non-idle gesture
-        # is stabilized, even if it is the same gesture again.
-        if candidate != "idle":
-            current_time = time.monotonic()
+        # Idle resets the repetition timer.
+        if candidate == "idle":
+            self.current_gesture = "idle"
+            self.last_action_time = None
+            return result
 
-            if current_time - self.last_action_time >= self.cooldown:
-                result["action"] = candidate
-                self.last_action_time = current_time
+        # A new gesture triggers immediately.
+        if candidate != self.current_gesture:
+            self.current_gesture = candidate
+            result["action"] = candidate
+            self.last_action_time = current_time
+            return result
+
+        # Repeat the same gesture after the configured interval.
+        if (
+            self.last_action_time is not None
+            and current_time - self.last_action_time >= self.repeat_interval
+        ):
+            result["action"] = candidate
+            self.last_action_time = current_time
 
         return result
 
     def reset(self):
-        """Reset the prediction window and stable state."""
+        """Reset the prediction window and gesture state."""
 
         self.predictions.clear()
         self.current_gesture = "idle"
-        self.last_action_time = float("-inf")
+        self.last_action_time = None

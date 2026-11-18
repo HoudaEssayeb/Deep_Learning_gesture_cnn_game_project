@@ -2,18 +2,18 @@ MODEL EVALUATION
 ================
 
 Device: cpu
-Accuracy: 64.58%
+Accuracy: 59.38%
 
 CLASSIFICATION REPORT
 ---------------------
               precision    recall  f1-score   support
 
-        idle     1.0000    0.8824    0.9375        17
-        jump     0.6250    0.6818    0.6522        22
-        left     0.4286    0.1765    0.2500        17
-       right     0.4545    0.8333    0.5882        18
-        roll     0.8235    0.6364    0.7179        22
+        idle     0.7647    0.7647    0.7647        17
+        jump     0.6667    0.7273    0.6957        22
+        left     0.4000    0.1176    0.1818        17
+       right     0.3667    0.6111    0.4583        18
+        roll     0.7500    0.6818    0.7143        22
 
-    accuracy                         0.6458        96
-   macro avg     0.6663    0.6421    0.6292        96
-weighted avg     0.6702    0.6458    0.6346        96
+    accuracy                         0.5938        96
+   macro avg     0.5896    0.5805    0.5630        96
+weighted avg     0.5997    0.5938    0.5767        96

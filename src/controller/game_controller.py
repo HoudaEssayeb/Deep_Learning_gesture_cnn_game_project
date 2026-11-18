@@ -4,8 +4,7 @@ import pyautogui
 
 class GameController:
     """
-    Sends keyboard commands to control the game
-    according to the stabilized gesture.
+    Sends keyboard commands according to detected gestures.
     """
 
     KEY_MAPPING = {
@@ -24,29 +23,17 @@ class GameController:
     }
 
     def __init__(self, dry_run=False):
-        """
-        Args:
-            dry_run: If True, simulate commands without
-                     sending actual keyboard presses.
-        """
         self.dry_run = dry_run
-        self.active_key = None
 
         pyautogui.FAILSAFE = True
-        pyautogui.PAUSE = 0.05
+        pyautogui.PAUSE = 0
 
         print("Game controller initialized.")
         print("Dry run:", self.dry_run)
 
     def execute(self, gesture):
         """
-        Execute the keyboard command associated with a gesture.
-
-        Args:
-            gesture: Stabilized gesture or action event.
-
-        Returns:
-            The keyboard key sent, or None.
+        Execute one keyboard action.
         """
 
         if gesture not in self.VALID_GESTURES:
@@ -58,7 +45,7 @@ class GameController:
         key = self.KEY_MAPPING[gesture]
 
         if self.dry_run:
-            print(f"[DRY RUN] Gesture: {gesture} -> Key: {key}")
+            print(f"[DRY RUN] {gesture} -> {key}")
         else:
             pyautogui.press(key)
             print(f"Gesture: {gesture} -> Key pressed: {key}")
@@ -66,11 +53,6 @@ class GameController:
         return key
 
     def release_all(self):
-        """Release any key that may still be held."""
+        """No continuously held key is used."""
 
-        if self.active_key is not None:
-            try:
-                if not self.dry_run:
-                    pyautogui.keyUp(self.active_key)
-            finally:
-                self.active_key = None
+        pass
