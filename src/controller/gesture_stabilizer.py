@@ -19,10 +19,10 @@ class GestureStabilizer:
 
     def __init__(
         self,
-        window_size=5,
-        min_votes=4,
-        confidence_threshold=0.70,
-        cooldown=0.6
+        window_size=3,
+        min_votes=2,
+        confidence_threshold=0.40,
+        cooldown=0.3
     ):
         if window_size <= 0:
             raise ValueError("window_size must be positive.")
@@ -31,7 +31,9 @@ class GestureStabilizer:
             raise ValueError("min_votes must be between 1 and window_size.")
 
         if not 0 <= confidence_threshold <= 1:
-            raise ValueError("confidence_threshold must be between 0 and 1.")
+            raise ValueError(
+                "confidence_threshold must be between 0 and 1."
+            )
 
         if cooldown < 0:
             raise ValueError("cooldown cannot be negative.")
@@ -64,7 +66,7 @@ class GestureStabilizer:
         if not 0 <= confidence <= 1:
             raise ValueError("Confidence must be between 0 and 1.")
 
-        # Low-confidence predictions are ignored as votes.
+        # Keep only predictions above the confidence threshold.
         if confidence >= self.confidence_threshold:
             self.predictions.append((gesture, confidence))
         else:
@@ -81,7 +83,7 @@ class GestureStabilizer:
         if len(self.predictions) < self.window_size:
             return result
 
-        # Keep only valid, confident predictions.
+        # Keep valid predictions.
         valid_predictions = [
             prediction
             for prediction in self.predictions
@@ -91,7 +93,7 @@ class GestureStabilizer:
         if not valid_predictions:
             return result
 
-        # Count the occurrences of each gesture.
+        # Count gesture votes.
         gesture_counts = Counter(
             prediction[0]
             for prediction in valid_predictions
@@ -99,28 +101,27 @@ class GestureStabilizer:
 
         candidate, votes = gesture_counts.most_common(1)[0]
 
-        # The gesture must receive enough votes.
+        # Require enough votes.
         if votes < self.min_votes:
             return result
 
-        # Calculate the average confidence for this gesture.
+        # Calculate average confidence for the candidate.
         candidate_confidence = sum(
-            confidence
-            for predicted_gesture, confidence in valid_predictions
+            conf
+            for predicted_gesture, conf in valid_predictions
             if predicted_gesture == candidate
         ) / votes
 
-        previous_gesture = self.current_gesture
-
-        # Update the stable state.
+        # Update stable gesture.
         self.current_gesture = candidate
 
-        result["stable_gesture"] = self.current_gesture
+        result["stable_gesture"] = candidate
         result["stable_confidence"] = candidate_confidence
         result["is_stable"] = True
 
-        # Trigger an action only when entering a new non-idle gesture.
-        if candidate != previous_gesture and candidate != "idle":
+        # Trigger the action whenever a non-idle gesture
+        # is stabilized, even if it is the same gesture again.
+        if candidate != "idle":
             current_time = time.monotonic()
 
             if current_time - self.last_action_time >= self.cooldown:
@@ -131,6 +132,7 @@ class GestureStabilizer:
 
     def reset(self):
         """Reset the prediction window and stable state."""
+
         self.predictions.clear()
         self.current_gesture = "idle"
         self.last_action_time = float("-inf")

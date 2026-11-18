@@ -1,19 +1,23 @@
 import threading
+import time
 
 import customtkinter as ctk
 import cv2
+import queue
+import threading
+import time
 
 from src.camera.camera import Camera
 from src.model.predictor import GesturePredictor
 from src.controller.gesture_stabilizer import GestureStabilizer
 from src.controller.game_controller import GameController
-from src.gui.camera_view import CameraView
 
+from src.gui.camera_view import CameraView
 from src.gui.performance_view import PerformanceView
 
 class MainWindow(ctk.CTk):
     """Main GUI for the gesture-controlled game."""
-
+    
     KEY_MAPPING = {
         "jump": "UP",
         "roll": "DOWN",
@@ -25,11 +29,13 @@ class MainWindow(ctk.CTk):
         super().__init__()
 
         self.last_error = None
-        
+
+        self.performance_window = None
+
         # Window configuration.
         self.title("Gesture-Controlled Game | Deep Learning")
-        self.geometry("1100x720")
-        self.minsize(950, 650)
+        self.geometry("1180x800")
+        self.minsize(1000, 680)
 
         ctk.set_appearance_mode("dark")
         ctk.set_default_color_theme("blue")
@@ -39,17 +45,78 @@ class MainWindow(ctk.CTk):
         self.stop_event = threading.Event()
         self.worker_thread = None
 
+        self.ui_queue = queue.Queue()
+        self.after(30, self._process_ui_queue)
+
         # Recognition settings.
-        self.confidence_threshold = 0.70
+        self.confidence_threshold = 0.40
         self.game_control_enabled = False
 
         self._build_interface()
 
         self.protocol("WM_DELETE_WINDOW", self.on_close)
 
+
+    def _publish_ui_event(self, event):
+        """Send an event from the worker thread to the GUI thread."""
+        self.ui_queue.put(event)
+
+
+    def _process_ui_queue(self):
+        """Process worker events safely in the main GUI thread."""
+
+        try:
+            while True:
+                event = self.ui_queue.get_nowait()
+                event_type = event[0]
+
+                if event_type == "status":
+                    self._set_status(event[1], event[2])
+
+                elif event_type == "dashboard":
+                    self._update_dashboard(*event[1:])
+
+                elif event_type == "stopped":
+                    self._on_recognition_stopped()
+
+        except queue.Empty:
+            pass
+
+        if self.winfo_exists():
+            self.after(30, self._process_ui_queue)
+
+
     def open_performance_dashboard(self):
         """Open the model performance dashboard."""
-        PerformanceView(self)
+
+        # If the window already exists, bring it to front.
+        if (
+            self.performance_window is not None
+            and self.performance_window.winfo_exists()
+        ):
+            self.performance_window.lift()
+            self.performance_window.focus_force()
+            return
+
+        self.performance_window = PerformanceView(self)
+
+        self.performance_window.protocol(
+            "WM_DELETE_WINDOW",
+            self._close_performance_dashboard
+        )
+
+
+    def _close_performance_dashboard(self):
+        """Close the performance dashboard."""
+
+        if (
+            self.performance_window is not None
+            and self.performance_window.winfo_exists()
+        ):
+            self.performance_window.destroy()
+
+        self.performance_window = None
+        
 
     def _build_interface(self):
         """Create the main application layout."""
@@ -105,9 +172,10 @@ class MainWindow(ctk.CTk):
 
         self.camera_view = CameraView(
             left_panel,
-            width=640,
-            height=480
+            width=480,
+            height=360
         )
+
         self.camera_view.grid(
             row=1,
             column=0,
@@ -117,7 +185,11 @@ class MainWindow(ctk.CTk):
         )
 
         # Right panel: information and settings.
-        right_panel = ctk.CTkFrame(self, corner_radius=10)
+        right_panel = ctk.CTkScrollableFrame(
+            self,
+            corner_radius=10
+        )
+
         right_panel.grid(
             row=1,
             column=1,
@@ -169,7 +241,7 @@ class MainWindow(ctk.CTk):
 
         self.threshold_label = ctk.CTkLabel(
             right_panel,
-            text="Confidence threshold: 70%"
+            text="Confidence threshold: 40%"
         )
         self.threshold_label.grid(
             row=8,
@@ -181,9 +253,9 @@ class MainWindow(ctk.CTk):
 
         self.threshold_slider = ctk.CTkSlider(
             right_panel,
-            from_=0.50,
+            from_=0.30,
             to=0.95,
-            number_of_steps=45,
+            number_of_steps=65,
             command=self._change_threshold
         )
         self.threshold_slider.set(self.confidence_threshold)
@@ -252,14 +324,6 @@ class MainWindow(ctk.CTk):
             column=0,
             padx=15,
             pady=10,
-            sticky="ew"
-        )
-
-        self.stop_button.grid(
-            row=12,
-            column=0,
-            padx=15,
-            pady=(5, 15),
             sticky="ew"
         )
 
@@ -334,6 +398,13 @@ class MainWindow(ctk.CTk):
             self.game_control_switch.get()
         )
 
+        if self.game_control_enabled:
+            self._set_status("Game keyboard control enabled", "#22C55E")
+            print("[GAME CONTROL] ENABLED")
+        else:
+            self._set_status("Game keyboard control disabled", "#F59E0B")
+            print("[GAME CONTROL] DISABLED")
+
     def _set_status(self, message, color="white"):
         self.status_label.configure(
             text=f"● {message}",
@@ -363,42 +434,58 @@ class MainWindow(ctk.CTk):
         self.worker_thread.start()
 
     def stop_recognition(self):
-        """Request the recognition worker to stop."""
-
+        """Stop real-time gesture recognition."""
         if not self.is_running:
             return
 
         self.stop_event.set()
-        self._set_status("Stopping...", "#F59E0B")
-        self.stop_button.configure(state="disabled")
 
+        self.stop_button.configure(state="disabled")
+        self._set_status("Stopping recognition...", "#F59E0B")
+        
     def _recognition_loop(self):
         """Capture frames, predict gestures and control the game."""
 
         camera = None
 
         try:
-            self.after(
-                0,
-                self._set_status,
+            self._publish_ui_event((
+                "status",
                 "Loading model...",
                 "#F59E0B"
-            )
+            ))
+
+            self._publish_ui_event((
+                "status",
+                "Recognition active",
+                "#22C55E"
+            ))
 
             predictor = GesturePredictor()
 
-            stabilizer = GestureStabilizer(
-                confidence_threshold=self.confidence_threshold,
-                window_size=5,
-                min_votes=4,
-                cooldown=0.6
-            )
+            stabilizer = GestureStabilizer(confidence_threshold=self.confidence_threshold)
 
-            controller = GameController(
-                dry_run=not self.game_control_enabled
-            )
+            # The controller is always configured to send real keyboard commands.
+            # The GUI switch determines whether commands are actually executed.
+            controller = GameController(dry_run=False)
 
             camera = Camera(index=0, width=640, height=480)
+
+            inference_interval = 2
+            frame_count = 0
+
+            last_result = {
+                "gesture": "idle",
+                "confidence": 0.0,
+                "inference_time_ms": 0.0
+            }
+
+            last_stable_result = {
+                "stable_gesture": "idle",
+                "action": None
+            }
+
+            last_ui_update = 0.0
 
             self.after(
                 0,
@@ -407,6 +494,8 @@ class MainWindow(ctk.CTk):
                 "#22C55E"
             )
 
+
+
             while not self.stop_event.is_set():
 
                 success, frame = camera.read()
@@ -414,34 +503,51 @@ class MainWindow(ctk.CTk):
                 if not success:
                     raise RuntimeError("Unable to read webcam frame.")
 
-                # Extract the same centered ROI used during collection.
+                # Extract the centered hand region.
                 roi, (x1, y1, x2, y2) = predictor.extract_roi(frame)
 
-                # CNN prediction.
-                result = predictor.predict(roi)
+                # Run CNN inference every 2 frames.
+                if frame_count % inference_interval == 0:
 
-                gesture = result["gesture"]
-                confidence = result["confidence"]
-                latency = result["inference_time_ms"]
+                    last_result = predictor.predict(roi)
 
-                # Update gesture stabilization.
-                stabilizer.confidence_threshold = (
-                    self.confidence_threshold
-                )
+                    gesture = last_result["gesture"]
+                    confidence = last_result["confidence"]
 
-                stable_result = stabilizer.update(
-                    gesture,
-                    confidence
-                )
+                    # Stabilize the prediction.
+                    stabilizer.confidence_threshold = (
+                        self.confidence_threshold
+                    )
 
-                stable_gesture = stable_result["stable_gesture"]
-                action = stable_result["action"]
+                    last_stable_result = stabilizer.update(
+                        gesture,
+                        confidence
+                    )
 
-                # Execute only new action events.
-                if action is not None:
-                    controller.execute(action)
+                    action = last_stable_result["action"]
 
-                # Draw ROI and prediction information.
+                    # Execute only a new action event.
+                    if action is not None:
+
+                        if self.game_control_enabled:
+                            key = controller.execute(action)
+                            print(f"[GAME CONTROL] {action} -> {key}")
+
+                        else:
+                            print(
+                                f"[GAME CONTROL DISABLED] "
+                                f"Ignored action: {action}"
+                            )
+
+                frame_count += 1
+
+                gesture = last_result["gesture"]
+                confidence = last_result["confidence"]
+                latency = last_result["inference_time_ms"]
+
+                stable_gesture = last_stable_result["stable_gesture"]
+
+                # Draw the ROI.
                 cv2.rectangle(
                     frame,
                     (x1, y1),
@@ -470,18 +576,28 @@ class MainWindow(ctk.CTk):
                     2
                 )
 
-                command = self.KEY_MAPPING.get(stable_gesture, "None")
+                # Limit GUI updates to approximately 20 FPS.
+                current_time = time.perf_counter()
 
-                self.after(
-                    0,
-                    self._update_dashboard,
-                    frame.copy(),
-                    gesture,
-                    confidence,
-                    stable_gesture,
-                    latency,
-                    command
-                )
+                if current_time - last_ui_update >= 0.05:
+
+                    command = self.KEY_MAPPING.get(
+                        stable_gesture,
+                        "None"
+                    )
+
+                    self._publish_ui_event((
+                        "dashboard",
+                        frame.copy(),
+                        gesture,
+                        confidence,
+                        stable_gesture,
+                        latency,
+                        command
+                    ))
+
+                    last_ui_update = current_time
+
 
         except Exception as error:
             self.last_error = str(error)
@@ -492,12 +608,11 @@ class MainWindow(ctk.CTk):
             else:
                 status = "Recognition error"
 
-            self.after(
-                0,
-                self._set_status,
+            self._publish_ui_event((
+                "status",
                 status,
                 "#EF4444"
-            )
+            ))
 
         finally:
             if camera is not None:
@@ -505,8 +620,8 @@ class MainWindow(ctk.CTk):
 
             self.is_running = False
 
-            self.after(0, self._on_recognition_stopped)
-
+            self._publish_ui_event(("stopped",))
+    
     def _update_dashboard(
         self,
         frame,
@@ -537,11 +652,16 @@ class MainWindow(ctk.CTk):
         )
 
     def _on_recognition_stopped(self):
+        """Update the interface after recognition stops."""
+
+        self.is_running = False
+
         self.start_button.configure(state="normal")
         self.stop_button.configure(state="disabled")
 
         if self.last_error:
             self.camera_view.show_message(self.last_error)
+            self._set_status("Recognition error", "#EF4444")
             return
 
         self.camera_view.show_message("Webcam inactive")

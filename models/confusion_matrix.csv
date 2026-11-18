@@ -1,6 +1,6 @@
 Actual / Predicted,idle,jump,left,right,roll
-idle,13,2,1,1,0
-jump,0,17,0,3,2
-left,1,1,2,12,3
-right,0,1,9,11,4
-roll,0,4,0,3,16
+idle,15,2,0,0,0
+jump,0,15,0,5,2
+left,0,2,3,12,0
+right,0,0,2,15,1
+roll,0,5,2,1,14

@@ -20,7 +20,7 @@ Le projet utilise une webcam, un CNN MobileNetV2 (Transfer Learning), une interf
 
 ## Classes de gestes
 Le dataset doit contenir les classes suivantes (noms de dossiers exacts) :
-`idle`, `jump`, `forward`, `backward`, `crouch`
+
 
 **Important :** vérifier que le dataset choisi contient ces poses ou préparer/annoter des images complémentaires. Un dataset ASL/alphabet ne correspond pas automatiquement à ces commandes.
 

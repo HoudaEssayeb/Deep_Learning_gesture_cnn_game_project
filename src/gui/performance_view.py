@@ -3,6 +3,7 @@ from pathlib import Path
 import customtkinter as ctk
 import pandas as pd
 import torch
+import threading
 
 from torch.utils.data import DataLoader
 from torchvision import datasets
@@ -34,6 +35,7 @@ class PerformanceView(ctk.CTkToplevel):
         self.transient(master)
 
         self._build_interface()
+        self.after(150, self._start_evaluation)
 
     def _build_interface(self):
         """Create the performance dashboard."""
@@ -129,21 +131,7 @@ class PerformanceView(ctk.CTkToplevel):
             sticky="w",
             pady=5
         )
-
-        self.refresh_button = ctk.CTkButton(
-            bottom,
-            text="REFRESH PERFORMANCE",
-            command=self.refresh
-        )
-        self.refresh_button.grid(
-            row=0,
-            column=1,
-            rowspan=3,
-            padx=10
-        )
-
-        self.refresh()
-
+    
     @staticmethod
     def _normalize_accuracy(values):
         """Convert accuracy values to percentages when necessary."""
@@ -329,35 +317,28 @@ class PerformanceView(ctk.CTkToplevel):
             test_dataset.classes
         )
 
-    @staticmethod
-    def _normalize_accuracy(values):
-        """Convert accuracy values to percentages when necessary."""
+    def _start_evaluation(self):
+        """Start model evaluation in a background thread."""
 
-        values = [float(value) for value in values]
-
-        if not values:
-            return []
-
-        if max(values) <= 1.0:
-            return [value * 100 for value in values]
-
-        return values
-
-    def refresh(self):
-        """Reload history, evaluate the model and redraw charts."""
-
-        self.refresh_button.configure(state="disabled")
         self.status_label.configure(
             text="Loading training history and evaluating model...",
             text_color="#F59E0B"
         )
 
+        worker = threading.Thread(
+            target=self._evaluate_in_background,
+            daemon=True
+        )
+        worker.start()
+
+
+    def _evaluate_in_background(self):
+        """Load data and evaluate the model without blocking the GUI."""
+
         try:
             history = self._load_training_history()
 
-            labels, predictions, classes = (
-                self._load_test_predictions()
-            )
+            labels, predictions, classes = self._load_test_predictions()
 
             matrix = confusion_matrix(
                 labels,
@@ -379,50 +360,71 @@ class PerformanceView(ctk.CTkToplevel):
                 zero_division=0
             )
 
-            self._draw_charts(
+            self.after(
+                0,
+                self._display_results,
                 history,
                 matrix,
-                classes
-            )
-
-            self.metrics_label.configure(
-                text=(
-                    f"Test accuracy: {accuracy:.1f}%"
-                    f"     |     Test images: {len(labels)}"
-                    f"     |     Classes: {len(classes)}"
-                )
-            )
-
-
-            class_details = []
-
-            for class_name in classes:
-                scores = report[class_name]
-
-                class_details.append(
-                    f"{class_name}: "
-                    f"Precision {scores['precision']:.0%} | "
-                    f"Recall {scores['recall']:.0%} | "
-                    f"F1 {scores['f1-score']:.0%}"
-                )
-
-            self.class_metrics_label.configure(
-                text="     •     ".join(class_details)
-            )
-
-            self.status_label.configure(
-                text="Evaluation completed successfully.",
-                text_color="#22C55E"
+                classes,
+                accuracy,
+                len(labels),
+                report
             )
 
         except Exception as error:
-            self.status_label.configure(
-                text=f"Evaluation error: {error}",
-                text_color="#EF4444"
+            self.after(0, self._display_error, str(error))
+
+
+    def _display_results(
+        self,
+        history,
+        matrix,
+        classes,
+        accuracy,
+        total_images,
+        report
+    ):
+        """Display evaluation results in the GUI thread."""
+
+        self._draw_charts(history, matrix, classes)
+
+        self.metrics_label.configure(
+            text=(
+                f"Test accuracy: {accuracy:.1f}%"
+                f"     |     Test images: {total_images}"
+                f"     |     Classes: {len(classes)}"
+            )
+        )
+
+        class_details = []
+
+        for class_name in classes:
+            scores = report[class_name]
+
+            class_details.append(
+                f"{class_name}: "
+                f"Precision {scores['precision']:.0%} | "
+                f"Recall {scores['recall']:.0%} | "
+                f"F1 {scores['f1-score']:.0%}"
             )
 
-        finally:
-            self.refresh_button.configure(state="normal")
+        self.class_metrics_label.configure(
+            text="     •     ".join(class_details)
+        )
+
+        self.status_label.configure(
+            text="Evaluation completed successfully.",
+            text_color="#22C55E"
+        )
+
+
+    def _display_error(self, message):
+        """Display an evaluation error in the GUI."""
+
+        self.status_label.configure(
+            text=f"Evaluation error: {message}",
+            text_color="#EF4444"
+        )
 
     def _draw_charts(self, history, matrix, classes):
         """Draw training curves and the confusion matrix."""

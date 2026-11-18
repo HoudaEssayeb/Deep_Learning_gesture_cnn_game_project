@@ -138,23 +138,39 @@ class GesturePredictor:
                 dim=1
             )
 
-        gesture = self.class_names[
-            predicted_index.item()
-        ]
-
+        gesture = self.class_names[predicted_index.item()]
         confidence_value = confidence.item()
+
+        # Get the two most probable classes
+        top_values, top_indices = torch.topk(
+            probabilities,
+            k=2,
+            dim=1
+        )
+
+        top_predictions = [
+            {
+                "gesture": self.class_names[index],
+                "confidence": value
+            }
+            for value, index in zip(
+                top_values[0].tolist(),
+                top_indices[0].tolist()
+            )
+        ]
 
         inference_time = (
             time.perf_counter() - start_time
         ) * 1000
 
+
         return {
             "gesture": gesture,
             "confidence": confidence_value,
+            "top_predictions": top_predictions,
             "inference_time_ms": inference_time
         }
-
-
+    
 # --------------------------------------------------
 # 5. Webcam demonstration
 # --------------------------------------------------
@@ -202,6 +218,18 @@ def main():
                 )
 
                 last_result = predictor.predict(roi)
+
+            top_predictions = last_result["top_predictions"]
+
+            top_text = " | ".join(
+                f"{item['gesture']}: {item['confidence'] * 100:.1f}%"
+                for item in top_predictions
+            )
+
+            print(
+                f"Prediction: {last_result['gesture']} "
+                f"| Top 2: {top_text}"
+            )
 
             frame_count += 1
 
