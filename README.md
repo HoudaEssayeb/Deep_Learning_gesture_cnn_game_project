@@ -1,80 +1,189 @@
+
 # Gesture CNN Game Control — Sujet 21
 
-Projet Python pour le **contrôle gestuel en temps réel d'un personnage de jeu vidéo par CNN**.\
+Application Python de contrôle gestuel en temps réel d'un personnage de jeu vidéo à l'aide d'un réseau de neurones convolutifs (CNN).
 
-Développement d'une application interactive capable de détecter les gestes d’un joueur à partir d’une caméra et de les convertir en commandes permettant de contrôler un personnage de jeu vidéo, notamment pour des actions telles que sauter, avancer, reculer ou se baisser.
+Le système utilise une webcam pour détecter cinq gestes de la main, les classifier avec MobileNetV2 et les convertir en commandes clavier.
 
-Les CNN permettront de reconnaître les gestes à partir des images capturées, tandis qu’un module de traitement en temps réel assurera la transmission des commandes au jeu.
+## 1. Objectifs
 
-L’application proposera une interface permettant de visualiser les gestes reconnus, de tester les différentes commandes et d’évaluer la précision ainsi que le temps de réponse du système. 
+- Reconnaître les gestes de la main à partir d'une webcam.
+- Utiliser MobileNetV2 avec Transfer Learning.
+- Stabiliser les prédictions successives.
+- Contrôler un jeu vidéo avec les commandes clavier.
+- Visualiser les prédictions et les performances du modèle.
 
-Le projet utilise une webcam, un CNN MobileNetV2 (Transfer Learning), une interface Tkinter et une transmission de commandes clavier.
+## 2. Technologies
 
-## Stack
-- Python 3.15 recommandé
-- PyTorch / torchvision : CNN, entraînement et inférence
-- OpenCV : capture webcam et prétraitement
-- Tkinter + Pillow : interface
-- PyAutoGUI : commandes clavier
-- scikit-learn / Matplotlib : évaluation
+- Python
+- PyTorch et torchvision
+- MobileNetV2
+- OpenCV
+- NumPy
+- Pillow
+- scikit-learn
+- Matplotlib
+- CustomTkinter
+- PyAutoGUI
+- tqdm
 
-## Classes de gestes
-Le dataset doit contenir les classes suivantes (noms de dossiers exacts) :
+## 3. Classes de gestes
 
+| Classe | Geste | Commande |
+|---|---|---|
+| idle | Main ouverte | Aucune |
+| jump | Pouce vers le haut | Up |
+| left | Pouce orienté à gauche | Left |
+| right | Pouce orienté à droite | Right |
+| roll | Pouce vers le bas | Down |
 
-**Important :** vérifier que le dataset choisi contient ces poses ou préparer/annoter des images complémentaires. Un dataset ASL/alphabet ne correspond pas automatiquement à ces commandes.
+Le jeu doit accepter les commandes clavier et posséder le focus clavier.
 
-## Installation (Windows / PowerShell)
+## 4. Installation et exécution
+
+### 4.1 Création de l'environnement
+
+Sous Windows / PowerShell :
+
 ```powershell
-py -3.15 -m venv .venv
-.\.venv\Scripts\Activate.ps1
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+
 python -m pip install --upgrade pip
 ```
-Installer PyTorch depuis le sélecteur officiel selon CPU/GPU : https://pytorch.org/get-started/locally/
-Puis :
+
+Installer PyTorch et torchvision en fonction de l'environnement CPU/GPU depuis :
+
+https://pytorch.org/get-started/locally/
+
+Installer ensuite les dépendances :
+
 ```powershell
 pip install -r requirements.txt
 ```
+
 Sélectionner l'interpréteur `.venv` dans VS Code.
 
-## Dataset attendu
-Les images doivent montrer la main/pose avec une définition de classe constante. Les splits doivent être distincts; éviter de placer des images quasi identiques dans train et test.
+### 4.2 Préparation du dataset
 
-## Étapes
-1. Collecter/préparer le dataset.
-2. Entraîner : `python -m src.model.train`
-3. Évaluer : `python -m src.model.evaluate`
-4. Lancer l'application : `python main.py`
+Les scripts disponibles permettent de constituer, vérifier et préparer les données.
 
-Le modèle entraîné est enregistré dans `models/best_model.pth`.
+```powershell
+python collect_dataset.py
+python check_dataset.py
+python rename_dataset_images.py
+python prepare_dataset.py
+```
 
-## Jeu vidéo
-Le contrôleur envoie les touches (par défaut):
-- `jump` → Space
-- `right` → Right
-- `left` → Left
-- `roll` → Down
-- `idle` → relâcher les touches
+La préparation organise les images dans les ensembles :
 
-Tester d'abord dans un jeu qui accepte les commandes clavier. Le jeu/la fenêtre doit avoir le focus. Modifier le mapping dans `src/controller/game_controller.py` si nécessaire.
+- `train`
+- `val`
+- `test`
 
-## Metriques
-Mesure	Utilité
-Accuracy	Pourcentage global de prédictions correctes
-Precision	Fiabilité des prédictions pour chaque geste
-Recall	Capacité à reconnaître chaque geste
-F1-score	Équilibre entre precision et recall
-Confusion matrix	Identification des erreurs entre les gestes
+### 4.3 Entraînement du modèle
 
-## Mesures affichées
-- Geste prédit
-- Confiance (softmax)
-- FPS caméra / application
-- Latence d'inférence (ms)
+```powershell
+python train.py
+```
 
-La latence affichée est le temps de l'inférence CNN, pas la latence complète webcam→jeu. Mesurer séparément la latence globale pour le rapport.
+Le modèle sélectionné sur la base des performances de validation est sauvegardé dans :
 
-## Limites du prototype
-- Les classes de gestes sont des poses statiques, classifiées frame par frame.
-- Le seuil de confiance et la stabilité de prédiction sont des paramètres à calibrer.
-- La qualité de reconnaissance dépend du dataset, de la lumière, de la distance et de la caméra.
+```text
+models/mobilenetv2_best.pth
+```
+
+L'historique d'entraînement est enregistré dans :
+
+```text
+models/training_history.csv
+```
+
+### 4.4 Évaluation du modèle
+
+```powershell
+python evaluate.py
+```
+
+L'évaluation génère notamment :
+
+- Accuracy globale.
+- Precision, recall et F1-score par classe.
+- Matrice de confusion.
+- Rapport d'évaluation.
+
+Les résultats sont enregistrés dans le dossier `models/`.
+
+### 4.5 Lancement de l'application
+
+```powershell
+python main.py
+```
+
+L'application permet de démarrer la webcam, visualiser les gestes reconnus, activer le contrôle clavier et consulter le tableau de bord des performances.
+
+### 4.6 Exécution des tests
+
+Depuis la racine du projet :
+
+```powershell
+python -m tests.test_camera
+python -m tests.test_model
+python -m tests.test_preprocessing
+python -m tests.test_stabilizer
+python -m tests.test_game_controller
+python -m tests.test_game_keys
+```
+
+## 5. Mesures et évaluation
+
+Les principales métriques utilisées sont :
+
+- Accuracy : proportion de prédictions correctes.
+- Precision : fiabilité des prédictions par classe.
+- Recall : capacité à retrouver les exemples d'une classe.
+- F1-score : équilibre entre precision et recall.
+- Confusion matrix : analyse des erreurs de classification.
+
+L'application affiche notamment le geste reconnu, la confiance et le temps d'inférence.
+
+Le temps d'inférence ne représente pas la latence complète entre la présentation du geste et la réaction du jeu.
+
+## 6. Structure du projet
+
+```text
+DEEP_LEARNING_GESTURE_CNN_GAME_PROJECT/
+│
+├── main.py
+├── train.py
+├── evaluate.py
+├── collect_dataset.py
+├── check_dataset.py
+├── prepare_dataset.py
+├── rename_dataset_images.py
+├── requirements.txt
+├── README.md
+│
+├── src/
+│   ├── camera/
+│   ├── controller/
+│   ├── gui/
+│   └── model/
+│
+├── tests/
+├── dataset/
+│   ├── raw/
+│   ├── processed/
+│   └── reports/
+│
+├── models/
+└── docs/
+```
+
+## 7. Limites
+
+- Les gestes sont des poses statiques classifiées image par image.
+- Les performances dépendent de la qualité et de la diversité du dataset.
+- La lumière, la distance et la position de la main peuvent influencer la reconnaissance.
+- Le seuil de confiance et le stabilisateur doivent être calibrés.
+- Le jeu doit accepter les touches clavier envoyées par l'application.

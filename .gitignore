@@ -2,7 +2,4 @@
 out
 __pycache__/
 *.pyc
-dataset/
 models/*.pth
-results/*.png
-results/*.csv

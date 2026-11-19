@@ -4,6 +4,7 @@ import customtkinter as ctk
 import pandas as pd
 import torch
 import threading
+import time
 
 from torch.utils.data import DataLoader
 from torchvision import datasets
@@ -82,8 +83,15 @@ class PerformanceView(ctk.CTkToplevel):
         self.plot_frame.grid_rowconfigure(0, weight=1)
 
  
-        # Metrics and actions.
-        bottom = ctk.CTkFrame(self, fg_color="transparent")
+    
+        # ==========================================
+        # Evaluation metrics panel
+        # ==========================================
+
+        bottom = ctk.CTkFrame(
+            self,
+            fg_color="transparent"
+        )
         bottom.grid(
             row=3,
             column=0,
@@ -91,46 +99,95 @@ class PerformanceView(ctk.CTkToplevel):
             pady=(5, 15),
             sticky="ew"
         )
+
         bottom.grid_columnconfigure(0, weight=1)
 
+        # Overall test metrics.
         self.metrics_label = ctk.CTkLabel(
             bottom,
             text="Evaluation metrics will appear here.",
-            font=ctk.CTkFont(size=14, weight="bold")
+            font=ctk.CTkFont(size=14, weight="bold"),
+            anchor="w"
         )
         self.metrics_label.grid(
             row=0,
             column=0,
+            sticky="ew",
+            pady=(5, 8)
+        )
+
+        # Inference performance.
+        self.inference_label = ctk.CTkLabel(
+            bottom,
+            text="Average inference time: -- ms   |   FPS: --   |   Max: -- ms",
+            font=ctk.CTkFont(size=13, weight="bold"),
+            text_color="#38BDF8",
+            anchor="w"
+        )
+        self.inference_label.grid(
+            row=1,
+            column=0,
+            sticky="ew",
+            pady=(0, 10)
+        )
+
+        # Separator.
+        separator = ctk.CTkFrame(
+            bottom,
+            height=2,
+            fg_color=("gray80", "gray30")
+        )
+        separator.grid(
+            row=2,
+            column=0,
+            sticky="ew",
+            pady=(0, 8)
+        )
+
+        # Per-class metrics.
+        class_title = ctk.CTkLabel(
+            bottom,
+            text="CLASSIFICATION METRICS",
+            font=ctk.CTkFont(size=13, weight="bold"),
+            anchor="w"
+        )
+        class_title.grid(
+            row=3,
+            column=0,
             sticky="w",
-            pady=5
+            pady=(0, 5)
         )
 
         self.class_metrics_label = ctk.CTkLabel(
             bottom,
             text="Per-class metrics will appear here.",
             text_color="gray",
+            font=ctk.CTkFont(size=12),
             justify="left",
-            anchor="w",
-            wraplength=850
+            anchor="w"
         )
         self.class_metrics_label.grid(
-            row=1,
+            row=4,
             column=0,
-            sticky="w",
-            pady=5
+            sticky="ew",
+            pady=(0, 8)
         )
 
+        # Evaluation status.
         self.status_label = ctk.CTkLabel(
             bottom,
             text="Ready",
-            text_color="gray"
+            text_color="gray",
+            font=ctk.CTkFont(size=12),
+            anchor="w"
         )
         self.status_label.grid(
-            row=2,
+            row=5,
             column=0,
             sticky="w",
-            pady=5
+            pady=(3, 0)
         )
+
     
     @staticmethod
     def _normalize_accuracy(values):
@@ -284,7 +341,7 @@ class PerformanceView(ctk.CTkToplevel):
 
         test_loader = DataLoader(
             test_dataset,
-            batch_size=16,
+            batch_size=1,
             shuffle=False,
             num_workers=0
         )
@@ -301,20 +358,56 @@ class PerformanceView(ctk.CTkToplevel):
         all_labels = []
         all_predictions = []
 
+        total_inference_time = 0.0
+        max_inference_time = 0.0
+
         with torch.inference_mode():
             for images, labels in test_loader:
-                images = images.to(device)
 
+                # Include device transfer in the measured inference time.
+                if device.type == "cuda":
+                    torch.cuda.synchronize()
+
+                start_time = time.perf_counter()
+
+                images = images.to(device)
                 outputs = model(images)
                 predictions = torch.argmax(outputs, dim=1)
+
+                if device.type == "cuda":
+                    torch.cuda.synchronize()
+
+                elapsed = time.perf_counter() - start_time
+
+                total_inference_time += elapsed
+                max_inference_time = max(
+                    max_inference_time,
+                    elapsed
+                )
 
                 all_labels.extend(labels.tolist())
                 all_predictions.extend(predictions.cpu().tolist())
 
+        # Calculate performance metrics.
+        average_inference_time = (
+            total_inference_time / len(test_dataset)
+        ) * 1000
+
+        fps = (
+            len(test_dataset) / total_inference_time
+            if total_inference_time > 0
+            else 0
+        )
+
+        max_inference_time *= 1000
+
         return (
             all_labels,
             all_predictions,
-            test_dataset.classes
+            test_dataset.classes,
+            average_inference_time,
+            fps,
+            max_inference_time
         )
 
     def _start_evaluation(self):
@@ -338,7 +431,7 @@ class PerformanceView(ctk.CTkToplevel):
         try:
             history = self._load_training_history()
 
-            labels, predictions, classes = self._load_test_predictions()
+            (labels, predictions, classes, average_inference_time, fps, max_inference_time) = self._load_test_predictions()
 
             matrix = confusion_matrix(
                 labels,
@@ -368,7 +461,10 @@ class PerformanceView(ctk.CTkToplevel):
                 classes,
                 accuracy,
                 len(labels),
-                report
+                report,
+                average_inference_time,
+                fps,
+                max_inference_time
             )
 
         except Exception as error:
@@ -382,7 +478,10 @@ class PerformanceView(ctk.CTkToplevel):
         classes,
         accuracy,
         total_images,
-        report
+        report,
+        average_inference_time,
+        fps,
+        max_inference_time
     ):
         """Display evaluation results in the GUI thread."""
 
@@ -396,20 +495,29 @@ class PerformanceView(ctk.CTkToplevel):
             )
         )
 
+        self.inference_label.configure(
+            text=(
+                f"Average Inference Time: {average_inference_time:.2f} ms"
+                f"     |     FPS: {fps:.2f}"
+                f"     |     Max Inference Time: {max_inference_time:.2f} ms"
+            )
+        )
+        
+
         class_details = []
 
         for class_name in classes:
             scores = report[class_name]
 
             class_details.append(
-                f"{class_name}: "
-                f"Precision {scores['precision']:.0%} | "
-                f"Recall {scores['recall']:.0%} | "
-                f"F1 {scores['f1-score']:.0%}"
+                f"{class_name.upper():<8} | "
+                f"Precision: {scores['precision']:.1%}   "
+                f"Recall: {scores['recall']:.1%}   "
+                f"F1-score: {scores['f1-score']:.1%}"
             )
 
         self.class_metrics_label.configure(
-            text="     •     ".join(class_details)
+            text="\n".join(class_details)
         )
 
         self.status_label.configure(
